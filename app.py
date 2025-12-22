@@ -1,66 +1,119 @@
+# Custom log1p transformer function
+def log1p_transform(x):
+    import numpy as np
+    return np.log1p(x)
+
+# Import necessary libraries
 import streamlit as st
 import pandas as pd
 import joblib
 
-# -------------------------------
-# Load pipeline
-# -------------------------------
+# --------------------------------------------------
+# App configuration
+# --------------------------------------------------
+st.set_page_config(
+    page_title="Car Price Prediction App",
+    page_icon="🚗",
+    layout="centered"
+)
+
+st.title("🚗 Car Price Prediction")
+st.write("Predict the estimated market price of a car using machine learning.")
+
+# --------------------------------------------------
+# Load trained pipeline and feature contract
+# --------------------------------------------------
 @st.cache_resource
-def load_pipeline():
-    return joblib.load("car_price_xgb_pipeline.pkl")
+def load_model():
+    bundle = joblib.load("car_price_xgb_pipeline.pkl")
+    return bundle["pipeline"], bundle["features"]
 
-pipeline = load_pipeline()
+pipeline, EXPECTED_FEATURES = load_model()
 
-# -------------------------------
-# App UI
-# -------------------------------
-st.title("🚗 Car Price Prediction App")
-st.write("Predict car prices using a trained XGBoost model")
+# --------------------------------------------------
+# Input validation helper
+# --------------------------------------------------
+def validate_input(df):
+    missing = set(EXPECTED_FEATURES) - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing features: {missing}")
 
-# -------------------------------
-# User Inputs
-# -------------------------------
-model = st.text_input("Car Model (e.g. Corolla, Camry, Golf)")
+# --------------------------------------------------
+# User inputs
+# --------------------------------------------------
+st.subheader("Enter car details")
 
-engine_size = st.number_input("Engine Size (L)", min_value=0.5, max_value=8.0, step=0.1)
-year = st.number_input("Year of Manufacture", min_value=1990, max_value=2025, step=1)
-mileage = st.number_input("Mileage (km)", min_value=0, step=1000)
+model_name = st.text_input("Car Model", placeholder="e.g. Corolla")
 
-age = st.number_input("Car Age (years)", min_value=0, step=1)
-mileage_per_year = st.number_input("Mileage per Year", min_value=0.0)
+engine_size = st.number_input(
+    "Engine Size (Litres)",
+    min_value=0.5,
+    max_value=8.0,
+    step=0.1
+)
 
-brand_popularity = st.slider("Brand Popularity Score", 0.0, 1.0)
+age = st.number_input(
+    "Car Age (Years)",
+    min_value=0,
+    max_value=50,
+    step=1
+)
 
-fuel_petrol = st.checkbox("Petrol")
-fuel_hybrid = st.checkbox("Hybrid")
+mileage = st.number_input(
+    "Mileage (km)",
+    min_value=0,
+    step=1000
+)
 
+brand_popularity = st.slider(
+    "Brand Popularity Score",
+    min_value=0.0,
+    max_value=1.0,
+    step=0.01
+)
+
+st.markdown("### Manufacturer")
 manufacturer_ford = st.checkbox("Ford")
+manufacturer_porsche = st.checkbox("Porsche")
 manufacturer_toyota = st.checkbox("Toyota")
 manufacturer_vw = st.checkbox("Volkswagen")
-manufacturer_porsche = st.checkbox("Porsche")
 
-# -------------------------------
-# Predict button
-# -------------------------------
+st.markdown("### Fuel Type")
+fuel_hybrid = st.checkbox("Hybrid")
+fuel_petrol = st.checkbox("Petrol")
+
+# --------------------------------------------------
+# Prediction
+# --------------------------------------------------
 if st.button("Predict Price"):
-    input_df = pd.DataFrame({
-        "Model": [model],
-        "Engine size": [engine_size],
-        "Year of manufacture": [year],
-        "Mileage": [mileage],
-        "Age": [age],
-        "Mileage_per_year": [mileage_per_year],
-        "Brand_popularity": [brand_popularity],
-        "Manufacturer_Ford": [manufacturer_ford],
-        "Manufacturer_Toyota": [manufacturer_toyota],
-        "Manufacturer_VW": [manufacturer_vw],
-        "Manufacturer_Porsche": [manufacturer_porsche],
-        "Fuel type_Petrol": [fuel_petrol],
-        "Fuel type_Hybrid": [fuel_hybrid],
-    })
-
     try:
-        prediction = pipeline.predict(input_df)[0]
-        st.success(f"💰 Estimated Price: ₦{prediction:,.2f}")
+        if model_name.strip() == "":
+            st.error("Please enter a car model.")
+            st.stop()
+
+        # Build input DataFrame (RAW features only)
+        input_df = pd.DataFrame({
+            'Model': [model_name],
+            'Engine size': [engine_size],
+            'Age': [age],
+            'Mileage': [mileage],
+            'Brand_popularity': [brand_popularity],
+            'Manufacturer_Ford': [manufacturer_ford],
+            'Manufacturer_Porsche': [manufacturer_porsche],
+            'Manufacturer_Toyota': [manufacturer_toyota],
+            'Manufacturer_VW': [manufacturer_vw],
+            'Fuel type_Hybrid': [fuel_hybrid],
+            'Fuel type_Petrol': [fuel_petrol]
+        })
+
+        # Validate feature contract
+        validate_input(input_df)
+
+        # Predict (returns REAL price because of TransformedTargetRegressor)
+        prediction = pipeline.predict(input_df).item()
+        #prediction = pipeline.predict(input_df)[0]
+
+        st.success(f"💰 Estimated Car Price: ${prediction:,.2f}")
+
     except Exception as e:
         st.error(f"Prediction failed: {e}")
